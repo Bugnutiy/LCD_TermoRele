@@ -9,6 +9,8 @@
 #define DEFAULT_TEMP_STEP {0.1, 0.1, 5}
 #define DEFAULT_MIN_TEMP_MISC {18, 24, 80}
 #define DEFAULT_MAX_TEMP_MISC {27, 28, 110}
+#define DEFAULT_SAFE_MODE {false, true, true}
+#define DEFAULT_AUTO_STOP {false, true, true}
 
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7, 10, POSITIVE);
 GyverMenu menu(16, 2);
@@ -16,7 +18,13 @@ GyverMenu menu(16, 2);
 struct Settings
 {
   uint8_t mode;
-  float TempMax[3] = DEFAULT_MIN_TEMP, TempMin[3] = DEFAULT_MAX_TEMP, TempStep[3] = DEFAULT_TEMP_STEP, TempMinMisc[3] = DEFAULT_MIN_TEMP_MISC, TempMaxMisc[3] = DEFAULT_MAX_TEMP_MISC;
+  float TempMax[3] = DEFAULT_MIN_TEMP,
+        TempMin[3] = DEFAULT_MAX_TEMP,
+        TempStep[3] = DEFAULT_TEMP_STEP,
+        TempMinMisc[3] = DEFAULT_MIN_TEMP_MISC,
+        TempMaxMisc[3] = DEFAULT_MAX_TEMP_MISC;
+  bool SafeMode[3] = DEFAULT_SAFE_MODE,
+       AutoStop[3] = DEFAULT_AUTO_STOP;
 };
 
 Settings settings;
@@ -52,7 +60,7 @@ void setup()
             GM_NEXT, "Temperatures",
             [](gm::Builder &b)
             {
-              if (b.ValueFloat("TempMin", &settings.TempMin[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode]-settings.TempStep[settings.mode], settings.TempStep[settings.mode], 2, "",
+              if (b.ValueFloat("TempMin", &settings.TempMin[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode] - settings.TempStep[settings.mode], settings.TempStep[settings.mode], 2, "",
                                [](float v)
                                {
                                  if (v >= settings.TempMax[settings.mode])
@@ -63,7 +71,7 @@ void setup()
               {
                 b.refresh();
               };
-              if (b.ValueFloat("TempMax", &settings.TempMax[settings.mode], settings.TempMinMisc[settings.mode]+settings.TempStep[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "", [](float v)
+              if (b.ValueFloat("TempMax", &settings.TempMax[settings.mode], settings.TempMinMisc[settings.mode] + settings.TempStep[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "", [](float v)
                                {
                             if(v<=settings.TempMin[settings.mode])
                             {
@@ -73,21 +81,21 @@ void setup()
                 b.refresh();
               };
             });
-          b.Page(
+        b.Page(
             GM_NEXT,
-            (String16)"Advanced " + (settings.mode==0?"Room":settings.mode==1?"Aqua":"Boil"),
+            (String16) "Advanced " + (settings.mode == 0 ? "Room" : settings.mode == 1 ? "Aqua"
+                                                                                       : "Boil"),
             [](gm::Builder &b)
             {
-              b.ValueFloat("MinTemp",&settings.TempMinMisc[settings.mode],-200,200,settings.TempStep[settings.mode],2,"");
-              b.ValueFloat("MaxTemp",&settings.TempMaxMisc[settings.mode],-200,200,settings.TempStep[settings.mode],2,"");
-              b.ValueFloat("TempStep",&settings.TempStep[settings.mode],0.01,10,0.01,2,"");
-            }
-          );
+              b.ValueFloat("MinTemp", &settings.TempMinMisc[settings.mode], -200, 200, settings.TempStep[settings.mode], 2, "");
+              b.ValueFloat("MaxTemp", &settings.TempMaxMisc[settings.mode], -200, 200, settings.TempStep[settings.mode], 2, "");
+              b.ValueFloat("TempStep", &settings.TempStep[settings.mode], 0.01, 10, 0.01, 2, "");
+              b.Switch("SafeMode", &settings.SafeMode[settings.mode]);
+              b.Switch("AutoStop", &settings.AutoStop[settings.mode]);
+            });
       });
 
   menu.refresh();
-  // pinMode(10, OUTPUT);
-  // put your setup code here, to run once:
 }
 
 void loop()
