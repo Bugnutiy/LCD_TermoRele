@@ -42,7 +42,6 @@ void setup()
         lcd.setCursor(0, row);
         lcd.print(chosen && !active ? '>' : ' ');
         return 1; });
-
   menu.onBuild(
       [](gm::Builder &b)
       {
@@ -53,27 +52,37 @@ void setup()
             GM_NEXT, "Temperatures",
             [](gm::Builder &b)
             {
-              if (b.ValueFloat("TempMin", &settings.TempMin[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "",
+              if (b.ValueFloat("TempMin", &settings.TempMin[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode]-settings.TempStep[settings.mode], settings.TempStep[settings.mode], 2, "",
                                [](float v)
                                {
                                  if (v >= settings.TempMax[settings.mode])
                                  {
-                                   settings.TempMax[settings.mode] = v + 1;
+                                   settings.TempMax[settings.mode] = v + settings.TempStep[settings.mode];
                                  }
                                }))
               {
                 b.refresh();
               };
-              if (b.ValueFloat("TempMax", &settings.TempMax[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "", [](float v)
+              if (b.ValueFloat("TempMax", &settings.TempMax[settings.mode], settings.TempMinMisc[settings.mode]+settings.TempStep[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "", [](float v)
                                {
                             if(v<=settings.TempMin[settings.mode])
                             {
-                              settings.TempMin[settings.mode]=v-1;
+                              settings.TempMin[settings.mode]=v-settings.TempStep[settings.mode];
                             } }))
               {
                 b.refresh();
               };
             });
+          b.Page(
+            GM_NEXT,
+            (String16)"Advanced " + (settings.mode==0?"Room":settings.mode==1?"Aqua":"Boil"),
+            [](gm::Builder &b)
+            {
+              b.ValueFloat("MinTemp",&settings.TempMinMisc[settings.mode],-200,200,settings.TempStep[settings.mode],2,"");
+              b.ValueFloat("MaxTemp",&settings.TempMaxMisc[settings.mode],-200,200,settings.TempStep[settings.mode],2,"");
+              b.ValueFloat("TempStep",&settings.TempStep[settings.mode],0.01,10,0.01,2,"");
+            }
+          );
       });
 
   menu.refresh();
