@@ -43,37 +43,38 @@ void setup()
         lcd.print(chosen && !active ? '>' : ' ');
         return 1; });
 
-  menu.onBuild([](gm::Builder &b)
-               {
-                 if (b.Select("Mode", &settings.mode, "Room;Aqua;Boil", [](uint8_t n, const char *str, uint8_t len) {}))
-                   b.refresh();
+  menu.onBuild(
+      [](gm::Builder &b)
+      {
+        if (b.Select("Mode", &settings.mode, "Room;Aqua;Boil", [](uint8_t n, const char *str, uint8_t len) {}))
+          b.refresh();
 
-                 b.Page(
-                  GM_NEXT, "Temperatures", 
-                  [](gm::Builder &b)
-                        {
-                          if(b.ValueFloat("TempMin", &settings.TempMin[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "",[](float v)
-                          {
-                            if(v>=settings.TempMax[settings.mode])
-                            {
-                              settings.TempMax[settings.mode]=v+1;
-                            }
-                          }))
-                          {
-                            b.refresh();
-                          }; 
-                          if(b.ValueFloat("TempMax", &settings.TempMax[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "",[](float v)
-                          {
+        b.Page(
+            GM_NEXT, "Temperatures",
+            [](gm::Builder &b)
+            {
+              if (b.ValueFloat("TempMin", &settings.TempMin[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "",
+                               [](float v)
+                               {
+                                 if (v >= settings.TempMax[settings.mode])
+                                 {
+                                   settings.TempMax[settings.mode] = v + 1;
+                                 }
+                               }))
+              {
+                b.refresh();
+              };
+              if (b.ValueFloat("TempMax", &settings.TempMax[settings.mode], settings.TempMinMisc[settings.mode], settings.TempMaxMisc[settings.mode], settings.TempStep[settings.mode], 2, "", [](float v)
+                               {
                             if(v<=settings.TempMin[settings.mode])
                             {
                               settings.TempMin[settings.mode]=v-1;
-                            }
-                          }))
-                          {
-                            b.refresh();
-                          }; 
-                        }
-                        ); });
+                            } }))
+              {
+                b.refresh();
+              };
+            });
+      });
 
   menu.refresh();
   // pinMode(10, OUTPUT);
