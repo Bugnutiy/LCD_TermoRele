@@ -32,7 +32,8 @@ EEManager eeprom(settings);
 
 void setup()
 {
-  // eeprom.begin(0, 78);
+  eeprom.begin(0, 78);
+  eeprom.setTimeout(10000);
   // Serial.begin(115200);
   lcd.begin(16, 2);
   lcd.setCursor(1, 0);
@@ -93,6 +94,11 @@ void setup()
               b.Switch("SafeMode", &settings.SafeMode[settings.mode]);
               b.Switch("AutoStop", &settings.AutoStop[settings.mode]);
             });
+        b.Button("Save settings",
+                 []()
+                 {
+                   eeprom.update();
+                 });
       });
 
   menu.refresh();
