@@ -3,18 +3,28 @@
 #include <GyverMenu.h>
 #include <StringN.h>
 #include <EEManager.h>
+#include "Timer.h"
 
 #define DEFAULT_MIN_TEMP {22, 25, 98}
 #define DEFAULT_MAX_TEMP {21, 24, 95}
-#define DEFAULT_TEMP_STEP {0.1, 0.1, 5}
+#define DEFAULT_TEMP_STEP {0.1, 0.1, 1}
 #define DEFAULT_MIN_TEMP_MISC {18, 24, 80}
 #define DEFAULT_MAX_TEMP_MISC {27, 28, 110}
+
+#define DEFAULT_DELAY_TIME {60, 0, 10}
 #define DEFAULT_SAFE_MODE {false, true, true}
+#define DEFAULT_SAFE_TIME {60 * 60, 60, 60}
+#define DEFAULT_SAFE_TEMP_UP_STEP {0.1, 0.1, 1}
+#define DEFAULT_SAFE_TEMP_DOWN_STEP {1, 1, 1}
+
+#define DEFAULT_AUTO_RESET {false, false, false}
+#define DEFAULT_RESET_TIME {60 * 15, 60, 60}
+
 #define DEFAULT_AUTO_STOP {false, true, true}
 
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7, 10, POSITIVE);
 GyverMenu menu(16, 2);
-
+#pragma pack(push, 1)
 struct Settings
 {
   uint8_t mode;
@@ -23,9 +33,17 @@ struct Settings
         TempStep[3] = DEFAULT_TEMP_STEP,
         TempMinMisc[3] = DEFAULT_MIN_TEMP_MISC,
         TempMaxMisc[3] = DEFAULT_MAX_TEMP_MISC;
-  bool SafeMode[3] = DEFAULT_SAFE_MODE,
-       AutoStop[3] = DEFAULT_AUTO_STOP;
+  bool DelayTimer[3] = DEFAULT_DELAY_TIME,
+       SafeMode[3] = DEFAULT_SAFE_MODE,
+       AutoStop[3] = DEFAULT_AUTO_STOP,
+       AutoReset[3] = DEFAULT_AUTO_RESET;
+  uint32_t DelayTime[3] = DEFAULT_DELAY_TIME,
+           SafeTime[3] = DEFAULT_SAFE_TIME,
+           ResetTime[3] = DEFAULT_RESET_TIME;
+  float SafeTempUpStep[3] = DEFAULT_SAFE_TEMP_UP_STEP;
+  float SafeTempDownStep[3] = DEFAULT_SAFE_TEMP_DOWN_STEP;
 };
+#pragma pack(pop)
 
 Settings settings;
 EEManager eeprom(settings);
@@ -91,8 +109,30 @@ void setup()
               b.ValueFloat("MinTemp", &settings.TempMinMisc[settings.mode], -200, 200, settings.TempStep[settings.mode], 2, "");
               b.ValueFloat("MaxTemp", &settings.TempMaxMisc[settings.mode], -200, 200, settings.TempStep[settings.mode], 2, "");
               b.ValueFloat("TempStep", &settings.TempStep[settings.mode], 0.01, 10, 0.01, 2, "");
-              b.Switch("SafeMode", &settings.SafeMode[settings.mode]);
-              b.Switch("AutoStop", &settings.AutoStop[settings.mode]);
+
+              if (b.Switch("DelayTimer", &settings.SafeMode[settings.mode]))
+                b.refresh();
+              if (settings.DelayTimer[settings.mode])
+              {
+                // b.ValueInt("Delay",)
+              }
+
+              if (b.Switch("SafeMode", &settings.SafeMode[settings.mode]))
+                b.refresh();
+              if (settings.SafeMode[settings.mode])
+              {
+                b.Page(GM_NEXT,
+                       "SafeMode Set",
+                       [](gm::Builder &b) 
+                       {
+                          
+                       });
+              }
+              if (b.Switch("AutoStop", &settings.AutoStop[settings.mode]))
+                b.refresh();
+              if (settings.AutoStop[settings.mode])
+              {
+              }
             });
         b.Button("Save settings",
                  []()
@@ -106,31 +146,34 @@ void setup()
 
 void loop()
 {
+  eeprom.tick();
   unsigned int x = 0;
   x = analogRead(A0);
-  if (x < 100)
-  {
-    menu.right();
-    delay(200);
-  }
-  else if (x < 200)
-  {
-    menu.up();
-    delay(200);
-  }
-  else if (x < 400)
-  {
-    menu.down();
-    delay(200);
-  }
-  else if (x < 600)
-  {
-    menu.left();
-    delay(200);
-  }
-  else if (x < 800)
-  {
-    menu.set();
-    delay(200);
-  }
+  TMR16(200, {
+    if (x < 100)
+    {
+      menu.right();
+      // delay(200);
+    }
+    else if (x < 200)
+    {
+      menu.up();
+      // delay(200);
+    }
+    else if (x < 400)
+    {
+      menu.down();
+      // delay(200);
+    }
+    else if (x < 600)
+    {
+      menu.left();
+      // delay(200);
+    }
+    else if (x < 800)
+    {
+      menu.set();
+      // delay(200);
+    }
+  });
 }
