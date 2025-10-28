@@ -5,7 +5,7 @@
 
 
 #ifdef MY_DEBUG
-
+#define DEBUG_INIT Serial.begin(115200);
 #define DD_1(X) Serial.println(X)
 #define DDD_1(X) Serial.print(X)
 #define DD_2(X, T)                          \
@@ -56,7 +56,7 @@
 #define DDD(...) DD_SELECT(__VA_ARGS__, DDD_3, DDD_2, DDD_1, dummy)(__VA_ARGS__)
 
 #else
-
+#define DEBUG_INIT
 #define DD(...)
 #define DDD(...)
 

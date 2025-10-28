@@ -3,7 +3,11 @@
 #include <GyverMenu.h>
 #include <StringN.h>
 #include <EEManager.h>
+#include <GyverDS18Single.h>
 #include "Timer.h"
+#define MY_DEBUG
+#include "My_Debug.h"
+#include "Relay.h"
 
 #define DEFAULT_MIN_TEMP {22, 25, 98}
 #define DEFAULT_MAX_TEMP {21, 24, 95}
@@ -21,13 +25,15 @@
 #define DEFAULT_RESET_TIME {60 * 15, 60, 60}
 
 #define DEFAULT_AUTO_STOP {false, false, true}
+#define DEFAULT_BACKLIGHT_TIME {15, 60 * 15, 60 * 15}
+#define DEFAULT_STANDBY_TIME {5, 5, 5}
 
-LiquidCrystal lcd(8, 9, 4, 5, 6, 7, 10, POSITIVE);
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7, 10, POSITIVE); // Свободные : (0,1) 2,3 ,11,12,13
 GyverMenu menu(16, 2);
 #pragma pack(push, 1)
 struct Settings
 {
-  uint8_t mode, backlight=255;
+  uint8_t mode, backlight = 100;
   float TempMax[3] = DEFAULT_MIN_TEMP,
         TempMin[3] = DEFAULT_MAX_TEMP,
         TempStep[3] = DEFAULT_TEMP_STEP,
@@ -39,7 +45,9 @@ struct Settings
        AutoReset[3] = DEFAULT_AUTO_RESET;
   uint32_t DelayTime[3] = DEFAULT_DELAY_TIME,
            SafeTime[3] = DEFAULT_SAFE_TIME,
-           ResetTime[3] = DEFAULT_RESET_TIME;
+           ResetTime[3] = DEFAULT_RESET_TIME,
+           BacklightTime[3] = DEFAULT_BACKLIGHT_TIME,
+           StandbyScreenTime[3] = DEFAULT_STANDBY_TIME;
   float SafeTempUpStep[3] = DEFAULT_SAFE_TEMP_UP_STEP;
   float SafeTempDownStep[3] = DEFAULT_SAFE_TEMP_DOWN_STEP;
 };
@@ -47,16 +55,20 @@ struct Settings
 
 Settings settings;
 EEManager eeprom(settings);
+GyverDS18Single ds(11);
+Relay relay(12, 0);
+float cTemperature = 22;
 
 void setup()
 {
-  eeprom.begin(0, 12);
-  eeprom.setTimeout(10000);
+  ds.requestTemp();
+  DEBUG_INIT
+  eeprom.begin(0, 2);
+  eeprom.setTimeout(1000);
   // Serial.begin(115200);
   lcd.begin(16, 2);
   lcd.setCursor(1, 0);
   lcd.print("Hello!");
-
   // lcd.backlight();
   analogWrite(10, settings.backlight);
   delay(1000);
@@ -115,7 +127,17 @@ void setup()
                      });
 
               if (b.Switch("DelayTimer", &settings.DelayTimer[settings.mode]))
+              {
                 b.refresh();
+                if (settings.DelayTimer[settings.mode])
+                {
+                  relay.setMinChangeTime(settings.DelayTime[settings.mode] * 1000);
+                }
+                else
+                {
+                  relay.setMinChangeTime(0);
+                }
+              }
               if (settings.DelayTimer[settings.mode])
               {
                 b.Page(GM_NEXT, "DelayTime",
@@ -126,13 +148,22 @@ void setup()
                          m = (uint8_t)((settings.DelayTime[settings.mode] - (uint32_t)h * 60 * 60) / 60);
                          s = (uint8_t)((settings.DelayTime[settings.mode] - (uint32_t)h * 60 * 60) - (uint32_t)m * 60);
                          if (b.ValueInt("DL H", &h, (uint8_t)0, (uint8_t)255, (uint8_t)1))
+                         {
                            settings.DelayTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+                           relay.setMinChangeTime(settings.DelayTime[settings.mode] * 1000);
+                         }
 
                          if (b.ValueInt("DL M", &m, (uint8_t)0, (uint8_t)59, (uint8_t)1))
+                         {
                            settings.DelayTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+                           relay.setMinChangeTime(settings.DelayTime[settings.mode] * 1000);
+                         }
 
                          if (b.ValueInt("DL S", &s, (uint8_t)0, (uint8_t)59, (uint8_t)1))
+                         {
                            settings.DelayTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+                           relay.setMinChangeTime(settings.DelayTime[settings.mode] * 1000);
+                         }
                        });
               }
 
@@ -192,15 +223,65 @@ void setup()
               if (b.Switch("AutoStop", &settings.AutoStop[settings.mode]))
                 b.refresh();
             });
-        b.Page(GM_NEXT,"Screen set",
-          [](gm::Builder &b)
-          {
-            b.ValueInt("Brightness",&settings.backlight,(uint8_t)1,(uint8_t)255,(uint8_t)1);
-              // analogWrite(10,settings.backlight);
-            
-          });
-        b.Button("Save settings", []()
-                 { eeprom.update(); });
+        b.Page(GM_NEXT, "Screen set",
+               [](gm::Builder &b)
+               {
+                 b.ValueInt("Brightness", &settings.backlight, (uint8_t)1, (uint8_t)255, (uint8_t)1);
+                 b.Page(GM_NEXT,
+                        "BacklightTime",
+                        [](gm::Builder &b)
+                        {
+                          uint8_t h, m, s;
+                          h = (uint8_t)(settings.BacklightTime[settings.mode] / (60 * 60));
+                          m = (uint8_t)((settings.BacklightTime[settings.mode] - (uint32_t)h * 60 * 60) / 60);
+                          s = (uint8_t)((settings.BacklightTime[settings.mode] - (uint32_t)h * 60 * 60) - (uint32_t)m * 60);
+                          if (b.ValueInt("H", &h, (uint8_t)0, (uint8_t)255, (uint8_t)1))
+                            settings.BacklightTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+
+                          if (b.ValueInt("M", &m, (uint8_t)0, (uint8_t)59, (uint8_t)1))
+                            settings.BacklightTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+
+                          if (b.ValueInt("S", &s, (uint8_t)0, (uint8_t)59, (uint8_t)1))
+                            settings.BacklightTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+                        });
+                 b.Page(GM_NEXT,
+                        "StandbyTime",
+                        [](gm::Builder &b)
+                        {
+                          uint8_t h, m, s;
+                          h = (uint8_t)(settings.StandbyScreenTime[settings.mode] / (60 * 60));
+                          m = (uint8_t)((settings.StandbyScreenTime[settings.mode] - (uint32_t)h * 60 * 60) / 60);
+                          s = (uint8_t)((settings.StandbyScreenTime[settings.mode] - (uint32_t)h * 60 * 60) - (uint32_t)m * 60);
+                          if (b.ValueInt("H", &h, (uint8_t)0, (uint8_t)255, (uint8_t)1))
+                            settings.StandbyScreenTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+
+                          if (b.ValueInt("M", &m, (uint8_t)0, (uint8_t)59, (uint8_t)1))
+                            settings.StandbyScreenTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+
+                          if (b.ValueInt("S", &s, (uint8_t)0, (uint8_t)59, (uint8_t)1))
+                            settings.StandbyScreenTime[settings.mode] = 60 * 60 * (uint32_t)h + 60 * (uint32_t)m + s;
+                        });
+               });
+        b.Button("Save settings",
+                 []()
+                 {
+                   eeprom.update();
+                   lcd.setCursor(0, 0);
+                   lcd.print("                ");
+                   lcd.setCursor(0, 0);
+                   lcd.print("Saving...");
+                   while (!eeprom.tick())
+                   {
+                     /* code */
+                   }
+                   lcd.clear();
+                   lcd.setCursor(0, 0);
+                   lcd.print("Settings");
+                   lcd.setCursor(0, 1);
+                   lcd.print("saved!");
+                   delay(2000);
+                   menu.refresh();
+                 });
       });
 
   menu.refresh();
@@ -208,58 +289,99 @@ void setup()
 
 void loop()
 {
-  static uint16_t timerBackLight;
-
-  if(eeprom.tick()){
-    analogWrite(10,settings.backlight);
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Settings");
-    lcd.setCursor(0,1);
-    lcd.print("saved!");
-    delay(3000);
-    timerBackLight = millis();
-    menu.refresh();
-  }
-  unsigned int x = 0;
-  x = analogRead(A0);
-  TMR16(200, {
-    if (x < 100)
+  static uint32_t timerBackLight, timerStandBy;
+  static bool standbyFlag = 0, workFlag = 0, safeFlag = 0, stopFlag = 0;
+  // читаем температуру
+  TMR16(1000, {
+    if (ds.ready())
     {
-      menu.right();
-      // delay(200);
-    }
-    else if (x < 200)
-    {
-      menu.up();
-      // delay(200);
-    }
-    else if (x < 400)
-    {
-      menu.down();
-      // delay(200);
-    }
-    else if (x < 600)
-    {
-      menu.left();
-      // delay(200);
-    }
-    else if (x < 800)
-    {
-      menu.set();
-      // delay(200);
+      if (ds.readTemp())
+      {
+        cTemperature = ds.getTemp();
+      }
+      ds.requestTemp();
     }
   });
-  if (x < 1000)
+  // Читаем кнопки
+  unsigned int x = 0;
+  x = analogRead(A0);
+  if (x < 800)
   {
-    analogWrite(10,settings.backlight);
+    DD(x, 100);
+
+    TMR16(200, {
+      if (x < 50)
+      {
+        menu.right();
+        // delay(200);
+      }
+      else if (x < 200)
+      {
+        menu.up();
+        // delay(200);
+      }
+      else if (x < 300)
+      {
+        menu.down();
+        // delay(200);
+      }
+      else if (x < 600)
+      {
+        menu.left();
+        // delay(200);
+      }
+      else if (x < 800)
+      {
+        menu.set();
+        // delay(200);
+      }
+    });
+    analogWrite(10, settings.backlight);
     timerBackLight = millis();
+    timerStandBy = millis();
+    standbyFlag = 0;
+    menu.refresh();
   }
-  else
+  else // Если кнопки не нажаты
   {
-    if ((uint16_t)((uint16_t)millis() - timerBackLight) >= 10000)
+    if ((uint32_t)((uint32_t)millis() - timerBackLight) >= settings.BacklightTime[settings.mode] * (uint32_t)1000)
     {
       lcd.noBacklight();
     }
+    if (((uint32_t)((uint32_t)millis() - timerStandBy) >= settings.StandbyScreenTime[settings.mode] * (uint32_t)1000) and settings.StandbyScreenTime[settings.mode] and !standbyFlag)
+    {
+      standbyFlag = 1;
+      lcd.clear();
+    }
+  }
+
+  // Обрабатываем температуру и настройки...
+  if (cTemperature < settings.TempMin[settings.mode])
+  {
+    workFlag = 1;
+  }
+  if (cTemperature >= settings.TempMax[settings.mode])
+  {
+    workFlag = 0;
+  }
+
+  // Вывод standby инфы на экран
+  if (standbyFlag)
+  {
+    TMR16(1000, {
+      lcd.setCursor(0, 0);
+      lcd.print("T: ");
+      lcd.print(cTemperature);
+      lcd.print("/");
+      lcd.print(settings.TempMax[settings.mode]);
+      lcd.setCursor(15, 0);
+      lcd.print(workFlag ? ">" : "<");
+
+      lcd.setCursor(0, 1);
+      lcd.print((String8) "D:" + (settings.DelayTimer[settings.mode] ? "+" : "-"));
+      lcd.print((String8) " S:" + (settings.SafeMode[settings.mode] ? "+" : "-"));
+      lcd.print((String8) " R:" + (settings.AutoReset[settings.mode] ? "+" : "-"));
+      lcd.print((String8) " A:" + (settings.AutoStop[settings.mode] ? "+" : "-"));
+    });
   }
 }
