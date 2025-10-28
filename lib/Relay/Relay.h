@@ -20,7 +20,7 @@ public:
     void change();
     void setMinChangeTime(uint64_t t);
 
-    void resetTimer();
+    void resetTimer(bool s);
 
     bool ready();
     void tick();
@@ -101,9 +101,17 @@ void Relay::setMinChangeTime(uint64_t min_change_time)
     _min_change_time = min_change_time;
 }
 
-void Relay::resetTimer()
+/**
+ * @brief 
+ * 
+ * @param s true для мгновенного включения
+ */
+void Relay::resetTimer(bool now = false)
 {
-    _tmr_min_change_time = -_min_change_time;
+    if (now)
+        _tmr_min_change_time = -_min_change_time;
+    else
+        _tmr_min_change_time = millis();
 }
 
 /**

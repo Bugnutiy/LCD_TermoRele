@@ -5,7 +5,7 @@
 #include <EEManager.h>
 #include <GyverDS18Single.h>
 #include "Timer.h"
-#define MY_DEBUG
+// #define MY_DEBUG
 #include "My_Debug.h"
 #include "Relay.h"
 
@@ -43,6 +43,7 @@ struct Settings
        SafeMode[3] = DEFAULT_SAFE_MODE,
        AutoStop[3] = DEFAULT_AUTO_STOP,
        AutoReset[3] = DEFAULT_AUTO_RESET;
+  uint8_t AutoStopCounter[3] = {1, 1, 1};
   uint32_t DelayTime[3] = DEFAULT_DELAY_TIME,
            SafeTime[3] = DEFAULT_SAFE_TIME,
            ResetTime[3] = DEFAULT_RESET_TIME,
@@ -57,20 +58,36 @@ Settings settings;
 EEManager eeprom(settings);
 GyverDS18Single ds(11);
 Relay relay(12, 0);
-float cTemperature = 22;
+float cTemperature = 0, pTemperature = 0;
 
+uint32_t timerBackLight, timerStandBy;
+uint8_t StopCounter;
+uint64_t safeTimer = 0, resetTimer = 0;
+bool standbyFlag = 0, workFlag = 0, safeFlag = 0, stopFlag = 0;
 void setup()
 {
   ds.requestTemp();
+
   DEBUG_INIT
-  eeprom.begin(0, 2);
+  eeprom.begin(0, 121);
   eeprom.setTimeout(1000);
+  relay.setMinChangeTime(settings.DelayTime[settings.mode] * 1000);
+  relay.resetTimer(1);
   // Serial.begin(115200);
   lcd.begin(16, 2);
   lcd.setCursor(1, 0);
   lcd.print("Hello!");
   // lcd.backlight();
   analogWrite(10, settings.backlight);
+  // while (!ds.ready())
+  {
+  }
+  if (ds.readTemp())
+  {
+    cTemperature = ds.getTemp();
+    pTemperature = cTemperature;
+    ds.requestTemp();
+  }
   delay(1000);
 
   menu.onPrint([](const char *str, size_t len)
@@ -168,7 +185,9 @@ void setup()
               }
 
               if (b.Switch("SafeMode", &settings.SafeMode[settings.mode]))
+              {
                 b.refresh();
+              }
               if (settings.SafeMode[settings.mode])
               {
                 b.Page(GM_NEXT,
@@ -219,9 +238,17 @@ void setup()
                          }
                        });
               }
+              else
+              {
+                safeFlag = 0;
+              }
 
               if (b.Switch("AutoStop", &settings.AutoStop[settings.mode]))
                 b.refresh();
+              if (settings.AutoStop[settings.mode])
+              {
+                b.ValueInt("A-S Counter", &settings.AutoStopCounter[settings.mode], (uint8_t)1, (uint8_t)255, (uint8_t)1);
+              }
             });
         b.Page(GM_NEXT, "Screen set",
                [](gm::Builder &b)
@@ -287,12 +314,23 @@ void setup()
   menu.refresh();
 }
 
+void blinkSymbol(uint8_t x, uint8_t y, const char *s, bool nstate)
+{
+  lcd.setCursor(x, y);
+  if (nstate)
+  {
+    lcd.print(s);
+  }
+  else
+  {
+    lcd.print(" ");
+  }
+}
 void loop()
 {
-  static uint32_t timerBackLight, timerStandBy;
-  static bool standbyFlag = 0, workFlag = 0, safeFlag = 0, stopFlag = 0;
+
   // читаем температуру
-  TMR16(1000, {
+  TMR16(500, {
     if (ds.ready())
     {
       if (ds.readTemp())
@@ -363,25 +401,142 @@ void loop()
   if (cTemperature >= settings.TempMax[settings.mode])
   {
     workFlag = 0;
+    StopCounter++;
+  }
+  if (settings.SafeMode[settings.mode]) // если включен safe mode
+  {
+
+    if (relay.getState() and !safeFlag)
+    {
+      // если температура упала во время нагрева.
+      if (pTemperature - cTemperature > settings.SafeTempDownStep[settings.mode])
+      {
+        safeFlag = 1;
+        relay.setNow(0);
+        relay.resetTimer();
+        resetTimer = millis();
+      }
+      // если температура не нагрелась за определенное время
+      if (((millis() - safeTimer) > (settings.SafeTime[settings.mode] * 1000)) and !safeFlag)
+      {
+        if (cTemperature - pTemperature < settings.SafeTempUpStep[settings.mode])
+        {
+          safeFlag = 1;
+          relay.setNow(0);
+          resetTimer = millis();
+        }
+        else
+        {
+          pTemperature = cTemperature;
+          safeTimer = millis();
+        }
+      }
+    }
+  }
+  if (settings.AutoReset[settings.mode]) // Reset
+  {
+    if (safeFlag and ((millis() - resetTimer) > (settings.ResetTime[settings.mode] * 1000)))
+    {
+      pTemperature = cTemperature;
+      safeFlag = 0;
+      safeTimer = millis();
+    }
+  }
+  if (settings.AutoStop[settings.mode])
+  {
+    if (StopCounter >= settings.AutoStopCounter[settings.mode])
+    {
+      stopFlag = 1;
+    }
   }
 
+  if (relay.ready())
+  {
+    if (relay.set(workFlag and !safeFlag and !stopFlag))
+    {
+      safeTimer = millis();
+    }
+  }
   // Вывод standby инфы на экран
   if (standbyFlag)
   {
     TMR16(1000, {
+      static bool wfs;
+
       lcd.setCursor(0, 0);
       lcd.print("T: ");
       lcd.print(cTemperature);
       lcd.print("/");
       lcd.print(settings.TempMax[settings.mode]);
-      lcd.setCursor(15, 0);
-      lcd.print(workFlag ? ">" : "<");
 
+      if (workFlag)
+      {
+        if (relay.getState())
+        {
+          lcd.setCursor(15, 0);
+          lcd.print(">");
+        }
+        else
+        {
+          blinkSymbol(15, 0, ">", wfs);
+        }
+      }
+      else
+      {
+        if (relay.getState())
+        {
+          blinkSymbol(15, 0, "<", wfs);
+        }
+        else
+        {
+          lcd.setCursor(15, 0);
+          lcd.print("<");
+        }
+      }
       lcd.setCursor(0, 1);
-      lcd.print((String8) "D:" + (settings.DelayTimer[settings.mode] ? "+" : "-"));
-      lcd.print((String8) " S:" + (settings.SafeMode[settings.mode] ? "+" : "-"));
-      lcd.print((String8) " R:" + (settings.AutoReset[settings.mode] ? "+" : "-"));
-      lcd.print((String8) " A:" + (settings.AutoStop[settings.mode] ? "+" : "-"));
+      lcd.print("D:");
+      if (!relay.ready())
+      {
+        blinkSymbol(2, 1, settings.DelayTimer[settings.mode] ? "+" : "-", wfs);
+      }
+      else
+      {
+        lcd.setCursor(2, 1);
+        lcd.print(settings.DelayTimer[settings.mode] ? "+" : "-");
+      }
+      lcd.print(" S:");
+      if (safeFlag)
+      {
+        blinkSymbol(6, 1, settings.SafeMode[settings.mode] ? "+" : "-", wfs);
+      }
+      else
+      {
+        lcd.setCursor(6, 1);
+        lcd.print(settings.SafeMode[settings.mode] ? "+" : "-");
+      }
+      lcd.print(" R:");
+      if (safeFlag and settings.AutoReset[settings.mode])
+      {
+        blinkSymbol(10, 1, settings.AutoReset[settings.mode] ? "+" : "-", wfs);
+      }
+      else
+      {
+        lcd.setCursor(10, 1);
+        lcd.print(settings.AutoReset[settings.mode] ? "+" : "-");
+      }
+      lcd.print(" A:");
+      if (settings.AutoStop[settings.mode])
+      {
+        if (settings.AutoStopCounter[settings.mode] - StopCounter < 100)
+          lcd.print(settings.AutoStopCounter[settings.mode] - StopCounter);
+        else
+          lcd.print("+");
+      }
+      else
+      {
+        lcd.print("-");
+      }
+      wfs = !wfs;
     });
   }
 }
